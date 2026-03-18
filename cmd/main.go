@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
 
 	api_translation "github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api-translation"
+	apikey_injection "github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/apikey_injection"
 	provider_resolver "github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/provider-resolver"
 )
 
@@ -45,7 +46,7 @@ func main() {
 }
 
 func registerPlugins() {
-	// framework.Register(plugins.ExamplePluginType, plugins.ExamplePluginFactory) // example plugin, can be removed later
 	framework.Register(provider_resolver.ProviderResolverPluginType, provider_resolver.ProviderResolverFactory)
 	framework.Register(api_translation.APITranslationPluginType, api_translation.APITranslationFactory)
+	framework.Register(apikey_injection.APIKeyInjectionPluginType, apikey_injection.APIKeyInjectionFactory)
 }
