@@ -23,15 +23,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/types"
-
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
+
+	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/external-model/provider"
+	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/external-model/state"
 )
 
 func TestProcessRequest_ModelResolved(t *testing.T) {
 	store := newModelStore()
 	store.setModel("claude-sonnet", ModelInfo{
-		Provider:              "anthropic",
-		CredentialRefName:     "anthropic-key",
+		Provider:               provider.Anthropic,
+		CredentialRefName:      "anthropic-key",
 		CredentialRefNamespace: "llm",
 	}, types.NamespacedName{Name: "claude-sonnet", Namespace: "llm"})
 
@@ -43,9 +45,9 @@ func TestProcessRequest_ModelResolved(t *testing.T) {
 	err := p.ProcessRequest(context.Background(), cs, req)
 	require.NoError(t, err)
 
-	provider, provErr := framework.ReadCycleStateKey[string](cs, "provider")
+	actualProvider, provErr := framework.ReadCycleStateKey[string](cs, state.ProviderKey)
 	assert.NoError(t, provErr)
-	assert.Equal(t, "anthropic", provider)
+	assert.Equal(t, provider.Anthropic, actualProvider)
 
 	credName, _ := framework.ReadCycleStateKey[string](cs, "credential-ref-name")
 	assert.Equal(t, "anthropic-key", credName)
@@ -64,7 +66,7 @@ func TestProcessRequest_ModelNotFound(t *testing.T) {
 	err := p.ProcessRequest(context.Background(), cs, req)
 	assert.NoError(t, err)
 
-	_, provErr := framework.ReadCycleStateKey[string](cs, "provider")
+	_, provErr := framework.ReadCycleStateKey[string](cs, state.ProviderKey)
 	assert.Error(t, provErr) // not found in CycleState
 }
 
@@ -79,7 +81,7 @@ func TestProcessRequest_InternalModel(t *testing.T) {
 	err := p.ProcessRequest(context.Background(), cs, req)
 	assert.NoError(t, err)
 
-	_, provErr := framework.ReadCycleStateKey[string](cs, "provider")
+	_, provErr := framework.ReadCycleStateKey[string](cs, state.ProviderKey)
 	assert.Error(t, provErr) // not found — internal models not in store
 }
 
@@ -107,7 +109,7 @@ func TestProcessRequest_NilRequest(t *testing.T) {
 func TestProcessRequest_NoCredentialRef(t *testing.T) {
 	store := newModelStore()
 	store.setModel("gpt-4o", ModelInfo{
-		Provider: "openai",
+		Provider: provider.OpenAI,
 		// no credential ref
 	}, types.NamespacedName{Name: "gpt-4o", Namespace: "llm"})
 
@@ -119,8 +121,8 @@ func TestProcessRequest_NoCredentialRef(t *testing.T) {
 	err := p.ProcessRequest(context.Background(), cs, req)
 	require.NoError(t, err)
 
-	provider, _ := framework.ReadCycleStateKey[string](cs, "provider")
-	assert.Equal(t, "openai", provider)
+	actualProvider, _ := framework.ReadCycleStateKey[string](cs, state.ProviderKey)
+	assert.Equal(t, provider.OpenAI, actualProvider)
 
 	_, credErr := framework.ReadCycleStateKey[string](cs, "credential-ref-name")
 	assert.Error(t, credErr) // not set
@@ -130,18 +132,18 @@ func TestModelStore_SetAndGet(t *testing.T) {
 	store := newModelStore()
 	key := types.NamespacedName{Name: "test", Namespace: "ns"}
 
-	store.setModel("model-a", ModelInfo{Provider: "anthropic"}, key)
+	store.setModel("model-a", ModelInfo{Provider: provider.Anthropic}, key)
 
 	info, found := store.getProvider("model-a")
 	assert.True(t, found)
-	assert.Equal(t, "anthropic", info.Provider)
+	assert.Equal(t, provider.Anthropic, info.Provider)
 }
 
 func TestModelStore_DeleteByResource(t *testing.T) {
 	store := newModelStore()
 	key := types.NamespacedName{Name: "test", Namespace: "ns"}
 
-	store.setModel("model-a", ModelInfo{Provider: "anthropic"}, key)
+	store.setModel("model-a", ModelInfo{Provider: provider.Anthropic}, key)
 	store.deleteByResource(key)
 
 	_, found := store.getProvider("model-a")

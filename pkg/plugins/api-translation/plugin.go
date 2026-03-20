@@ -24,50 +24,43 @@ import (
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
 
-	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api_translation/providers"
-	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api_translation/providers/anthropic"
+	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/external-model/provider"
+	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/external-model/state"
+	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api-translation/providers"
+	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api-translation/providers/anthropic"
 )
 
 const (
-	// PluginType is the unique identifier for this plugin, used in CLI flags and registry.
-	PluginType = "api-translation"
-
-	// CycleState keys
-	cycleStateProviderKey = "provider"             // read from CycleState, set by upstream plugin
-	cycleStateModelKey    = "api-translation-model" // written by this plugin for response use
+	APITranslationPluginType = "api-translation"
 )
 
 // compile-time type validation
 var _ framework.RequestProcessor = &APITranslationPlugin{}
 var _ framework.ResponseProcessor = &APITranslationPlugin{}
 
+// APITranslationFactory defines the factory function for APITranslationPlugin.
+func APITranslationFactory(name string, _ json.RawMessage, _ framework.Handle) (framework.BBRPlugin, error) {
+	return NewAPITranslationPlugin().WithName(name), nil
+}
+
+// NewAPITranslationPlugin creates a new plugin instance with all registered providers.
+func NewAPITranslationPlugin() *APITranslationPlugin {
+	return &APITranslationPlugin{
+		typedName: plugin.TypedName{
+			Type: APITranslationPluginType,
+			Name: APITranslationPluginType,
+		},
+		providers: map[string]providers.Provider{
+			provider.Anthropic: anthropic.NewAnthropicProvider(),
+		},
+	}
+}
+
 // APITranslationPlugin translates inference API requests and responses between
 // OpenAI Chat Completions format and provider-native formats (e.g., Anthropic Messages API).
 type APITranslationPlugin struct {
 	typedName plugin.TypedName
 	providers map[string]providers.Provider
-}
-
-// NewAPITranslationPlugin creates a new plugin instance with all registered providers.
-func NewAPITranslationPlugin() (*APITranslationPlugin, error) {
-	return &APITranslationPlugin{
-		typedName: plugin.TypedName{
-			Type: PluginType,
-			Name: PluginType,
-		},
-		providers: map[string]providers.Provider{
-			anthropic.ProviderName: anthropic.NewAnthropicProvider(),
-		},
-	}, nil
-}
-
-// Factory is the factory function for creating APITranslationPlugin instances.
-func Factory(name string, _ json.RawMessage, _ framework.Handle) (framework.BBRPlugin, error) {
-	p, err := NewAPITranslationPlugin()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create '%s' plugin - %w", PluginType, err)
-	}
-	return p.WithName(name), nil
 }
 
 // TypedName returns the type and name tuple of this plugin instance.
@@ -88,8 +81,8 @@ func (p *APITranslationPlugin) ProcessRequest(ctx context.Context, cycleState *f
 		return fmt.Errorf("invalid inference request: request/headers/body must be non-nil")
 	}
 
-	providerName, _ := framework.ReadCycleStateKey[string](cycleState, cycleStateProviderKey)
-	if providerName == "" || providerName == "openai" {
+	providerName, err := framework.ReadCycleStateKey[string](cycleState, state.ProviderKey) // err if not found
+	if err != nil || providerName == "" || providerName == "openai" {                       // empty provider means no translation needed
 		return nil
 	}
 
@@ -100,7 +93,7 @@ func (p *APITranslationPlugin) ProcessRequest(ctx context.Context, cycleState *f
 
 	// Store model in CycleState for response use
 	if model, ok := request.Body["model"].(string); ok {
-		cycleState.Write(cycleStateModelKey, model)
+		cycleState.Write(state.ModelKey, model)
 	}
 
 	translatedBody, headers, headersToRemove, err := translator.TranslateRequest(request.Body)
@@ -129,7 +122,7 @@ func (p *APITranslationPlugin) ProcessResponse(ctx context.Context, cycleState *
 		return fmt.Errorf("invalid inference response: response/headers/body must be non-nil")
 	}
 
-	providerName, _ := framework.ReadCycleStateKey[string](cycleState, cycleStateProviderKey)
+	providerName, _ := framework.ReadCycleStateKey[string](cycleState, state.ProviderKey)
 	if providerName == "" || providerName == "openai" {
 		return nil
 	}
@@ -139,7 +132,7 @@ func (p *APITranslationPlugin) ProcessResponse(ctx context.Context, cycleState *
 		return nil
 	}
 
-	model, _ := framework.ReadCycleStateKey[string](cycleState, cycleStateModelKey)
+	model, _ := framework.ReadCycleStateKey[string](cycleState, state.ModelKey)
 
 	translatedBody, err := translator.TranslateResponse(response.Body, model)
 	if err != nil {

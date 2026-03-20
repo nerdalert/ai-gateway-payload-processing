@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/external-model/state"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
@@ -28,13 +29,8 @@ import (
 )
 
 const (
-	// PluginType is the unique identifier for this plugin, used in CLI flags and registry.
-	PluginType = "provider-resolver"
-
-	// CycleState keys written by this plugin
-	cycleStateProviderKey         = "provider"
-	cycleStateCredRefNameKey      = "credential-ref-name"
-	cycleStateCredRefNamespaceKey = "credential-ref-namespace"
+	// ProviderResolverPluginType is the unique identifier for this plugin, used in CLI flags and registry.
+	ProviderResolverPluginType = "provider-resolver"
 )
 
 // maasModelRefGVK is the GroupVersionKind for MaaSModelRef CRD.
@@ -47,17 +43,9 @@ var maasModelRefGVK = schema.GroupVersionKind{
 // compile-time type validation
 var _ framework.RequestProcessor = &ProviderResolverPlugin{}
 
-// ProviderResolverPlugin resolves model names to providers by watching MaaSModelRef CRDs.
-// It writes the provider and credential reference to CycleState for downstream plugins
-// (api-translation, api-key-injection).
-type ProviderResolverPlugin struct {
-	typedName plugin.TypedName
-	store     *modelStore
-}
-
-// Factory creates a new ProviderResolverPlugin and registers a MaaSModelRef reconciler
+// ProviderResolverFactory creates a new ProviderResolverPlugin and registers a MaaSModelRef reconciler
 // via the framework Handle. Uses unstructured client to avoid importing MaaS controller types.
-func Factory(name string, _ json.RawMessage, handle framework.Handle) (framework.BBRPlugin, error) {
+func ProviderResolverFactory(name string, _ json.RawMessage, handle framework.Handle) (framework.BBRPlugin, error) {
 	store := newModelStore()
 
 	reconciler := &maasModelRefReconciler{
@@ -72,18 +60,26 @@ func Factory(name string, _ json.RawMessage, handle framework.Handle) (framework
 	if err := handle.ReconcilerBuilder().
 		For(obj).
 		Complete(reconciler); err != nil {
-		return nil, fmt.Errorf("failed to register MaaSModelRef reconciler for plugin '%s' - %w", PluginType, err)
+		return nil, fmt.Errorf("failed to register MaaSModelRef reconciler for plugin '%s' - %w", ProviderResolverPluginType, err)
 	}
 
 	p := &ProviderResolverPlugin{
 		typedName: plugin.TypedName{
-			Type: PluginType,
-			Name: PluginType,
+			Type: ProviderResolverPluginType,
+			Name: ProviderResolverPluginType,
 		},
 		store: store,
 	}
 
 	return p.WithName(name), nil
+}
+
+// ProviderResolverPlugin resolves model names to providers by watching MaaSModelRef CRDs.
+// It writes the provider and credential reference to CycleState for downstream plugins
+// (api-translation, api-key-injection).
+type ProviderResolverPlugin struct {
+	typedName plugin.TypedName
+	store     *modelStore
 }
 
 // TypedName returns the type and name tuple of this plugin instance.
@@ -115,11 +111,11 @@ func (p *ProviderResolverPlugin) ProcessRequest(ctx context.Context, cycleState 
 		return nil
 	}
 
-	cycleState.Write(cycleStateProviderKey, info.Provider)
+	cycleState.Write(state.ProviderKey, info.Provider)
 
 	if info.CredentialRefName != "" {
-		cycleState.Write(cycleStateCredRefNameKey, info.CredentialRefName)
-		cycleState.Write(cycleStateCredRefNamespaceKey, info.CredentialRefNamespace)
+		cycleState.Write(state.CredsRefName, info.CredentialRefName)
+		cycleState.Write(state.CredsRefNamespace, info.CredentialRefNamespace)
 	}
 
 	return nil

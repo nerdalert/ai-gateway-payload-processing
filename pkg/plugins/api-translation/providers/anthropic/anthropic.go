@@ -24,9 +24,6 @@ import (
 )
 
 const (
-	// ProviderName is the identifier for this provider, used as the CycleState key value.
-	ProviderName = "anthropic"
-
 	anthropicAPIVersion = "2023-06-01"
 	anthropicPath       = "/v1/messages"
 	defaultMaxTokens    = 4096

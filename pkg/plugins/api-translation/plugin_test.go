@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tests
+package api_translation
 
 import (
 	"context"
@@ -23,8 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-
-	plugin "github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api_translation"
 )
 
 func newCycleState() *framework.CycleState {
@@ -39,36 +37,33 @@ func newCycleStateWithProvider(provider string) *framework.CycleState {
 }
 
 func TestProcessRequest_NoProvider(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleState()
 	req := framework.NewInferenceRequest()
 	req.Body["model"] = "gpt-4o"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
 
-	err = p.ProcessRequest(context.Background(), cs, req)
+	err := p.ProcessRequest(context.Background(), cs, req)
 	assert.NoError(t, err)
 	assert.False(t, req.BodyMutated())
 }
 
 func TestProcessRequest_OpenAIProvider(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleStateWithProvider("openai")
 	req := framework.NewInferenceRequest()
 	req.Body["model"] = "gpt-4o"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
 
-	err = p.ProcessRequest(context.Background(), cs, req)
+	err := p.ProcessRequest(context.Background(), cs, req)
 	assert.NoError(t, err)
 	assert.False(t, req.BodyMutated())
 }
 
 func TestProcessRequest_AnthropicProvider(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleStateWithProvider("anthropic")
 	req := framework.NewInferenceRequest()
@@ -81,7 +76,7 @@ func TestProcessRequest_AnthropicProvider(t *testing.T) {
 	}
 	req.Body["max_tokens"] = float64(100)
 
-	err = p.ProcessRequest(context.Background(), cs, req)
+	err := p.ProcessRequest(context.Background(), cs, req)
 	require.NoError(t, err)
 
 	assert.True(t, req.BodyMutated())
@@ -109,41 +104,37 @@ func TestProcessRequest_AnthropicProvider(t *testing.T) {
 }
 
 func TestProcessRequest_UnknownProvider(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleStateWithProvider("bedrock")
 	req := framework.NewInferenceRequest()
 	req.Body["model"] = "some-model"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
 
-	err = p.ProcessRequest(context.Background(), cs, req)
+	err := p.ProcessRequest(context.Background(), cs, req)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported provider")
 	assert.Contains(t, err.Error(), "bedrock")
 }
 
 func TestProcessRequest_NilRequest(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
-	err = p.ProcessRequest(context.Background(), newCycleState(), nil)
+	err := p.ProcessRequest(context.Background(), newCycleState(), nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "non-nil")
 }
 
 func TestProcessResponse_NilResponse(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
-	err = p.ProcessResponse(context.Background(), newCycleState(), nil)
+	err := p.ProcessResponse(context.Background(), newCycleState(), nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "non-nil")
 }
 
 func TestProcessResponse_Anthropic(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleStateWithProvider("anthropic")
 	cs.Write("api-translation-model", "claude-sonnet-4-20250514")
@@ -160,7 +151,7 @@ func TestProcessResponse_Anthropic(t *testing.T) {
 		"output_tokens": float64(5),
 	}
 
-	err = p.ProcessResponse(context.Background(), cs, resp)
+	err := p.ProcessResponse(context.Background(), cs, resp)
 	require.NoError(t, err)
 
 	assert.True(t, resp.BodyMutated())
@@ -181,8 +172,7 @@ func TestProcessResponse_Anthropic(t *testing.T) {
 }
 
 func TestProcessResponse_AnthropicError(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleStateWithProvider("anthropic")
 
@@ -193,7 +183,7 @@ func TestProcessResponse_AnthropicError(t *testing.T) {
 		"message": "max_tokens must be positive",
 	}
 
-	err = p.ProcessResponse(context.Background(), cs, resp)
+	err := p.ProcessResponse(context.Background(), cs, resp)
 	require.NoError(t, err)
 
 	assert.True(t, resp.BodyMutated())
@@ -202,8 +192,7 @@ func TestProcessResponse_AnthropicError(t *testing.T) {
 }
 
 func TestProcessResponse_AnthropicToolUse(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleStateWithProvider("anthropic")
 	cs.Write("api-translation-model", "claude-sonnet-4-20250514")
@@ -226,7 +215,7 @@ func TestProcessResponse_AnthropicToolUse(t *testing.T) {
 		"output_tokens": float64(10),
 	}
 
-	err = p.ProcessResponse(context.Background(), cs, resp)
+	err := p.ProcessResponse(context.Background(), cs, resp)
 	require.NoError(t, err)
 
 	assert.True(t, resp.BodyMutated())
@@ -245,8 +234,7 @@ func TestProcessResponse_AnthropicToolUse(t *testing.T) {
 }
 
 func TestProcessResponse_NoProviderPassthrough(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleState() // no provider in CycleState
 
@@ -256,28 +244,27 @@ func TestProcessResponse_NoProviderPassthrough(t *testing.T) {
 		map[string]any{"message": map[string]any{"content": "hi"}},
 	}
 
-	err = p.ProcessResponse(context.Background(), cs, resp)
+	err := p.ProcessResponse(context.Background(), cs, resp)
 	assert.NoError(t, err)
 	assert.False(t, resp.BodyMutated())
 }
 
 func TestProcessResponse_OpenAIPassthrough(t *testing.T) {
-	p, err := plugin.NewAPITranslationPlugin()
-	require.NoError(t, err)
+	p := NewAPITranslationPlugin()
 
 	cs := newCycleStateWithProvider("openai")
 
 	resp := framework.NewInferenceResponse()
 	resp.Body["object"] = "chat.completion"
 
-	err = p.ProcessResponse(context.Background(), cs, resp)
+	err := p.ProcessResponse(context.Background(), cs, resp)
 	assert.NoError(t, err)
 	assert.False(t, resp.BodyMutated())
 }
 
 func TestFactory_Success(t *testing.T) {
-	p, err := plugin.Factory("test-instance", nil, nil)
+	p, err := APITranslationFactory("test-instance", nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "test-instance", p.TypedName().Name)
-	assert.Equal(t, plugin.PluginType, p.TypedName().Type)
+	assert.Equal(t, APITranslationPluginType, p.TypedName().Type)
 }
