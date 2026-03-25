@@ -138,13 +138,20 @@ func (p *ApiKeyInjectionPlugin) ProcessRequest(ctx context.Context, cycleState *
 		return fmt.Errorf("request or headers is nil")
 	}
 
+	// Check if this is an external model (provider set by provider-resolver).
+	// Internal models have no provider in CycleState and don't need API key injection.
+	providerName, _ := framework.ReadCycleStateKey[string](cycleState, state.ProviderKey)
+	if providerName == "" {
+		return nil
+	}
+
 	credsName, err := framework.ReadCycleStateKey[string](cycleState, state.CredsRefName)
 	if err != nil || credsName == "" {
-		return fmt.Errorf("missing credentials reference name in CycleState")
+		return fmt.Errorf("external model with provider '%s' is missing credentialRef", providerName)
 	}
 	credsNamespace, err := framework.ReadCycleStateKey[string](cycleState, state.CredsRefNamespace)
 	if err != nil || credsNamespace == "" {
-		return fmt.Errorf("missing credentials reference namespace in CycleState")
+		return fmt.Errorf("external model with provider '%s' is missing credentialRef namespace", providerName)
 	}
 
 	secretKey := fmt.Sprintf("%s/%s", credsNamespace, credsName)
@@ -153,7 +160,6 @@ func (p *ApiKeyInjectionPlugin) ProcessRequest(ctx context.Context, cycleState *
 		return fmt.Errorf("no secret found for ref '%s'", secretKey)
 	}
 
-	providerName, _ := framework.ReadCycleStateKey[string](cycleState, state.ProviderKey)
 	generator, ok := p.apikeyGenerators[providerName]
 	if !ok {
 		generator = p.apikeyGenerators[provider.OpenAI]

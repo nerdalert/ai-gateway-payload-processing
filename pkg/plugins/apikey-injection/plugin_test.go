@@ -92,9 +92,9 @@ func TestProcessRequest(t *testing.T) {
 			},
 		},
 		{
-			name:       "default provider when CycleState has no provider — uses OpenAI Bearer",
+			name:       "unknown provider — falls back to OpenAI Bearer format",
 			secrets:    []*corev1.Secret{testSecret("default", "no-provider", "sk-key")},
-			cycleState: newCycleState("default", "no-provider", ""),
+			cycleState: newCycleState("default", "no-provider", "some-unknown-provider"),
 			wantHeaders: map[string]string{
 				"Authorization": "Bearer sk-key",
 			},
@@ -116,15 +116,27 @@ func TestProcessRequest(t *testing.T) {
 	}
 }
 
-func TestProcessRequestMissingCredsRef(t *testing.T) {
+func TestProcessRequestInternalModel_SkipsGracefully(t *testing.T) {
 	store := seedStore(testSecret("default", "key", "sk-key"))
 	p := newTestPlugin(store)
 	req := newTestRequest(nil)
 	cs := framework.NewCycleState()
+	// No provider in CycleState — internal model
+
+	err := p.ProcessRequest(context.Background(), cs, req)
+	require.NoError(t, err, "should skip gracefully for internal models (no provider in CycleState)")
+}
+
+func TestProcessRequestExternalModel_MissingCredsRef(t *testing.T) {
+	store := seedStore(testSecret("default", "key", "sk-key"))
+	p := newTestPlugin(store)
+	req := newTestRequest(nil)
+	cs := framework.NewCycleState()
+	cs.Write(state.ProviderKey, "anthropic") // external model has provider but no creds
 
 	err := p.ProcessRequest(context.Background(), cs, req)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing credentials reference")
+	assert.Contains(t, err.Error(), "missing credentialRef")
 }
 
 func TestProcessRequestSecretNotFound(t *testing.T) {
