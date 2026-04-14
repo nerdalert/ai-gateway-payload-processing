@@ -1,0 +1,106 @@
+name: CI - E2E Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  E2E_SIMULATOR_ENDPOINT: "3.150.113.9"
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            src:
+              - '**/*.go'
+              - Dockerfile
+              - Dockerfile.e2e
+              - Makefile
+              - go.mod
+              - go.sum
+              - go.work
+              - go.work.sum
+              - 'test/e2e/**'
+              - 'deploy/**'
+              - '.github/workflows/ci-e2e.yaml'
+
+  simulator-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      reachable: ${{ steps.check.outputs.reachable }}
+    steps:
+      - name: Check simulator connectivity
+        id: check
+        run: |
+          if nc -z -w 5 ${{ env.E2E_SIMULATOR_ENDPOINT }} 443 2>/dev/null; then
+            echo "Simulator is reachable"
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Simulator is NOT reachable - E2E tests will be skipped"
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  e2e:
+    needs: [check-changes, simulator-check]
+    if: ${{ needs.check-changes.outputs.src == 'true' && needs.simulator-check.outputs.reachable == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Extract Go version from go.mod
+        run: sed -En 's/^go (.*)$/GO_VERSION=\1/p' go.mod >> "$GITHUB_ENV"
+
+      - name: Set up Go with cache
+        uses: actions/setup-go@v6
+        with:
+          go-version: "${{ env.GO_VERSION }}"
+          cache-dependency-path: ./go.sum
+
+      - name: Set up Kind cluster with Istio and BBR
+        run: make test-e2e-setup
+
+      - name: Run E2E tests with JUnit report
+        run: make test-e2e-junit
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-junit-report
+          path: "**/results_e2e_xunit.xml"
+          if-no-files-found: warn
+
+      - name: Publish E2E test results
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: "**/results_e2e_xunit.xml"
+          check_name: E2E Test Results
+          fail_on_failure: true

@@ -103,9 +103,17 @@ test-unit: envtest ## Run unit tests. Optional: COVERAGE=true (or 1) for go tool
 	fi; \
 	rm -f cover.out
 
+E2E_JUNIT_REPORT ?= results_e2e_xunit.xml
+
 .PHONY: test-e2e
 test-e2e: ## Run E2E tests (requires cluster with Istio + BBR deployed).
 	go test ./test/e2e/ -v -ginkgo.v -count=1 -timeout=10m
+
+.PHONY: test-e2e-junit
+test-e2e-junit: ## Run E2E tests with JUnit XML report output.
+	go test ./test/e2e/ -v -ginkgo.v -count=1 -timeout=10m \
+		-ginkgo.junit-report=$(E2E_JUNIT_REPORT) \
+		$(if $(E2E_LABEL_FILTER),-ginkgo.label-filter="$(E2E_LABEL_FILTER)",)
 
 .PHONY: test-e2e-setup
 test-e2e-setup: ## Set up Kind cluster with Istio and BBR for E2E testing.
@@ -153,6 +161,24 @@ image-load: image-build
 .PHONY: image-kind
 image-kind: image-build ## Build the image and load it to kind cluster $KIND_CLUSTER ("kind" by default).
 	kind load docker-image $(IMAGE_TAG) --name $(KIND_CLUSTER)
+
+# E2E test container image (for RHOAI shift-left Jenkins pipeline)
+E2E_IMAGE_REGISTRY ?= quay.io/opendatahub
+E2E_IMAGE_NAME := ai-gateway-payload-processing-e2e
+E2E_IMAGE_REPO ?= $(E2E_IMAGE_REGISTRY)/$(E2E_IMAGE_NAME)
+E2E_IMAGE_TAG ?= $(E2E_IMAGE_REPO):$(GIT_TAG)
+
+.PHONY: image-e2e-build
+image-e2e-build: ## Build the E2E test container image.
+	$(IMAGE_BUILD_CMD) -f Dockerfile.e2e -t $(E2E_IMAGE_TAG) \
+		--platform=$(PLATFORMS) \
+		$(PUSH) \
+		$(LOAD) \
+		$(IMAGE_BUILD_EXTRA_OPTS) ./
+
+.PHONY: image-e2e-push
+image-e2e-push: PUSH=--push ## Build and push the E2E test container image.
+image-e2e-push: image-e2e-build
 
 ##@ Dependencies
 
